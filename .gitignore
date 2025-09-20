@@ -1,0 +1,20 @@
+# .NET Core build artifacts
+[Bb]in/
+[Oo]bj/
+
+# Nuget packages
+*.nupkg
+packages/
+*.nuget.props
+*.nuget.targets
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio files
+.vs/
+*.csproj.user
+*.sln.opts
