@@ -33,7 +33,8 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "http://localhost:3000",
-                "http://localhost:3001"
+                "http://localhost:3001",
+                "https://suport.softwarehousecaiuademello.com.br"
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
