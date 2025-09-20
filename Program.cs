@@ -1,16 +1,14 @@
-// backend/Program.cs
-
 using Microsoft.EntityFrameworkCore;
 using backend.Models;
-using backend.Services; // ✨ Adicionado para acessar os serviços
+using backend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.OpenApi.Models;
+using System.IdentityModel.Tokens.Jwt; // ✨ 1. USING IMPORTANTE ✨
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,7 +24,7 @@ builder.Services.Configure<FormOptions>(options =>
     options.ValueLengthLimit = 100 * 1024 * 1024;
 });
 
-// Configuração de CORS
+// Configuração de CORS (já inclui seu domínio de produção)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowSpecificOrigins", policy =>
@@ -34,7 +32,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(
                 "http://localhost:3000",
                 "http://localhost:3001",
-                "https://suport.softwarehousecaiuademello.com.br"
+                "https://suporte.softwarehousecaiuademello.com.br"
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
@@ -46,9 +44,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        // Ignora propriedades nulas na serialização
         options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-        // Converte Enums (como TicketStatus) para strings no JSON
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
@@ -56,7 +52,6 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    // Define o esquema de segurança Bearer (JWT) para o Swagger UI
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -66,17 +61,12 @@ builder.Services.AddSwaggerGen(options =>
         In = ParameterLocation.Header,
         Description = "JWT Authorization header usando o esquema Bearer. \r\n\r\n Digite 'Bearer' [espaço] e então seu token.\r\n\r\nExemplo: \"Bearer 12345abcdef\""
     });
-
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
             },
             new string[] {}
         }
@@ -87,16 +77,23 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddHttpClient();
 builder.Services.AddHttpContextAccessor();
 
-// ✨✨✨ REGISTRO DOS SERVIÇOS DA APLICAÇÃO ✨✨✨
-// Registra o serviço de criptografia como Singleton (uma única instância para toda a aplicação)
+// REGISTRO DOS SERVIÇOS DA APLICAÇÃO
 builder.Services.AddSingleton<IEncryptionService, EncryptionService>();
-// Registra os serviços de negócio como Scoped (uma nova instância para cada requisição HTTP)
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
-builder.Services.AddScoped<IClientService, ClientService>(); 
+builder.Services.AddScoped<IClientService, ClientService>();
+
 // Configuração do DbContext com PostgreSQL
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+
+// ✨✨✨ A CORREÇÃO MÁGICA ESTÁ AQUI ✨✨✨
+// Limpa o mapeamento de claims padrão do .NET.
+// Isso impede que o middleware de autenticação renomeie claims como "sub" para nomes longos da Microsoft,
+// garantindo que `User.FindFirstValue(JwtRegisteredClaimNames.Sub)` funcione corretamente.
+JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+
 
 // Configuração de Autenticação JWT
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -105,11 +102,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         var secretKey = builder.Configuration["Jwt:SecretKey"] ?? throw new ArgumentException("Jwt:SecretKey não está configurado.");
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = false, // Em produção, considere validar (true)
-            ValidateAudience = false, // Em produção, considere validar (true)
+            ValidateIssuer = false,
+            ValidateAudience = false,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
+            // Define explicitamente qual claim representa a Role. Crucial para [Authorize(Roles = "...")]
+            RoleClaimType = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
         };
     });
 
@@ -123,13 +122,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Ordem correta dos middlewares
 app.UseRouting();
-
 app.UseCors("AllowSpecificOrigins");
 
-app.UseAuthentication(); // Verifica se há um token JWT e valida-o
-app.UseAuthorization();  // Verifica se o usuário autenticado tem as permissões (roles) necessárias
+app.UseAuthentication(); // 1º: Identifica quem é o usuário (valida o token)
+app.UseAuthorization();  // 2º: Verifica se o usuário identificado tem permissão para acessar o recurso
 
 app.MapControllers();
 

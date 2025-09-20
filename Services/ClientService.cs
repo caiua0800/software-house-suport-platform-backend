@@ -1,4 +1,3 @@
-// backend/Services/ClientService.cs
 using backend.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -27,6 +26,7 @@ namespace backend.Services
             _encryptionService = encryptionService;
         }
 
+        // ... (CreateClientAsync não muda)
         public async Task<Client> CreateClientAsync(Client client)
         {
             if (await _context.Clients.AnyAsync(c => c.Email == client.Email))
@@ -57,10 +57,12 @@ namespace backend.Services
 
             var claims = new[]
             {
-                new Claim(JwtRegisteredClaimNames.Sub, client.Id.ToString()),
+                new Claim(JwtRegisteredClaimNames.Sub, client.Id.ToString()),           // Padrão JWT
+                new Claim(ClaimTypes.NameIdentifier, client.Id.ToString()),         // Padrão Microsoft/ASP.NET Core
                 new Claim(JwtRegisteredClaimNames.Email, client.Email),
-                new Claim(ClaimTypes.Role, "Support") // ✨ AQUI ESTÁ A ROLE DO CLIENTE
+                new Claim(ClaimTypes.Role, "Support")
             };
+
 
             var token = new JwtSecurityToken(
                 issuer: _configuration["Jwt:Issuer"],
